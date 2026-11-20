@@ -206,6 +206,10 @@ mkdir -p "$RUN"
 run_domain "domain-a-script" script
 run_domain "domain-b-docs" docs
 
+# 全局：orch 子技能（/orch 调度长官模式）打包正确
+assert "orch 子技能文件存在且命名为 orch" bash -c "grep -qx 'name: orch' '$REPO/orch/SKILL.md'"
+assert "标题含斜杠时文件名安全（D-0008 修复）" bash -c "cd '$RUN/domain-a-script' && T=\$(bash '$SCRIPTS/wf-new.sh' issue 'a/b 问题') && ls docs/issues/\$T-*.md >/dev/null 2>&1"
+
 echo "=============================="
 echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

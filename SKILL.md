@@ -31,6 +31,10 @@ description: PRD 驱动的项目记录工作流。在对话中识别并记录决
 | `wf-archive.sh` | 归档终态文件到 `_archive/YYYY-MM/`（仅用户明确要求时执行） |
 | `wf-check.sh` | 校验：frontmatter 合法、ID 无重复、ID 引用可解析、INDEX 格式正确 |
 
+## 命令
+
+- `/orch`：调度长官模式（见 orch/SKILL.md，D-0008）。当前 agent 成为调度长官：启动 `wf-daemon.sh` 守护线程，作为所有任务/issue 创建的唯一入口，负责审批流转、队列监控、暂停与待验收的收口；不亲自写代码。说"退出调度"停止守护线程下岗
+
 ## 状态机
 
 ```

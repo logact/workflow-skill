@@ -32,6 +32,7 @@ fi
 wf_lock
 id=$(wf_next_id "$type")
 today=$(date "+%Y-%m-%d")
+fname=$(printf '%s' "$id-$title" | tr '/' '-')   # 标题里的 / 不能进文件名
 
 case "$type" in
   decision) status="完成";;
@@ -78,7 +79,7 @@ worktree:
 branch:"
 fi
 
-cat > "$WF_DOCS/$dir/$id-$title.md" <<EOF
+cat > "$WF_DOCS/$dir/$fname.md" <<EOF
 ---
 id: $id
 type: $type
@@ -103,5 +104,5 @@ fi
 
 wf_index "$id" "创建（${title}）"
 
-wf_git_commit "wf: 创建 ${id}（${title}）" "$WF_DOCS/$dir/$id-$title.md" "$WF_DOCS/INDEX.md" ${supersedes:+"$old"}
+wf_git_commit "wf: 创建 ${id}（${title}）" "$WF_DOCS/$dir/$fname.md" "$WF_DOCS/INDEX.md" ${supersedes:+"$old"}
 echo "$id"
