@@ -1,10 +1,12 @@
 ---
 id: T-xxxx
 type: task
-status: 待办
+status: 起草
 created: YYYY-MM-DD
 source: PRD            # 来源：I-xxxx 或 PRD（用 ID 引用，不写路径）
-worktree:              # orca worktree id（<repoId>::<path>），执行时创建
+priority: 中           # 高 / 中 / 低，调度器派发顺序依据（D-0005）
+depends_on:            # 前置任务 ID，逗号分隔（如 T-0001, T-0002），全部完成才可派发
+worktree:              # orca worktree id（<repoId>::<path>），派发执行时写入
 branch:                # 对应 git 分支名
 ---
 

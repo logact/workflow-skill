@@ -4,6 +4,8 @@ type: task
 status: 完成
 created: 2026-11-18
 source: PRD
+priority: 中
+depends_on:
 ---
 
 # 实现 workflow-skill（建模任务）

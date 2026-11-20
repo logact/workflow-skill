@@ -41,11 +41,15 @@ run_domain() { # $1=域名 $2=flavor(script|docs)
   assert_grep "旧决策 $D1 状态为已废弃" "status: 已废弃" docs/decisions/$D1-*.md
   assert "新决策 $D2 落地即完成" grep -q "status: 完成" docs/decisions/$D2-*.md
 
-  # 3. 任务（带双层验收标准）
+  # 3. 任务（带双层验收标准，创建即"起草"，审批后才可执行）
   T1=$(bash "$SCRIPTS/wf-new.sh" task "实现核心功能" --source PRD)
-  assert_grep "任务 $T1 初始状态待办" "status: 待办" docs/tasks/$T1-*.md
+  assert_grep "任务 $T1 初始状态起草" "status: 起草" docs/tasks/$T1-*.md
   assert_grep "任务 $T1 验收标准含结果层面" "结果层面" docs/tasks/$T1-*.md
   assert_grep "任务 $T1 验收标准含日志层面" "日志层面" docs/tasks/$T1-*.md
+  assert_grep "任务 $T1 默认优先级中" "priority: 中" docs/tasks/$T1-*.md
+  if bash "$SCRIPTS/wf-status.sh" "$T1" 进行中 >/dev/null 2>&1; then bad "起草直接转进行中被拒绝"; else ok "起草直接转进行中被拒绝"; fi
+  bash "$SCRIPTS/wf-status.sh" "$T1" 待办 "审批通过" >/dev/null
+  assert_grep "任务 $T1 审批后待办" "status: 待办" docs/tasks/$T1-*.md
 
   # 4. 问题（一个问题一个文件，来源可追溯）
   I1=$(bash "$SCRIPTS/wf-new.sh" issue "输出格式错误" --source "$T1")
@@ -69,6 +73,7 @@ run_domain() { # $1=域名 $2=flavor(script|docs)
   assert_grep "$T1 验收通过到完成" "status: 完成" docs/tasks/$T1-*.md
 
   T2=$(bash "$SCRIPTS/wf-new.sh" task "修复输出格式" --source "$I1")
+  bash "$SCRIPTS/wf-status.sh" "$T2" 待办 "审批通过" >/dev/null
   bash "$SCRIPTS/wf-status.sh" "$T2" 进行中 >/dev/null
   bash "$SCRIPTS/wf-status.sh" "$T2" 待验收 >/dev/null
   bash "$SCRIPTS/wf-status.sh" "$T2" 进行中 "验收不通过" >/dev/null   # 回到进行中
@@ -85,6 +90,7 @@ run_domain() { # $1=域名 $2=flavor(script|docs)
   assert_grep "backlog $B1 初始为已搁置" "status: 已搁置" docs/backlog/$B1-*.md
   T3=$(bash "$SCRIPTS/wf-new.sh" task "实现HTML导出" --source "$B1")
   bash "$SCRIPTS/wf-status.sh" "$B1" 完成 "回流扫描后已升级为 $T3" >/dev/null
+  bash "$SCRIPTS/wf-status.sh" "$T3" 待办 "审批通过" >/dev/null
   bash "$SCRIPTS/wf-status.sh" "$T3" 进行中 >/dev/null
   bash "$SCRIPTS/wf-status.sh" "$T3" 待验收 >/dev/null
   bash "$SCRIPTS/wf-status.sh" "$T3" 完成 >/dev/null
@@ -98,6 +104,31 @@ run_domain() { # $1=域名 $2=flavor(script|docs)
   assert "wf-query 输出当前状态" bash -c "bash '$SCRIPTS/wf-query.sh' '$T1' | grep -q '状态:   完成'"
   assert "wf-query 输出 INDEX 事件历史" bash -c "bash '$SCRIPTS/wf-query.sh' '$T1' | grep -q '创建（'"
   assert "wf-query 不存在的 ID 报错" bash -c "! bash '$SCRIPTS/wf-query.sh' T-9999 2>/dev/null"
+
+  # 7.8 守护调度（D-0005/D-0006）：起草不派发、依赖阻塞、优先级排序
+  TD1=$(bash "$SCRIPTS/wf-new.sh" task "低优任务" --priority 低)
+  TD2=$(bash "$SCRIPTS/wf-new.sh" task "高优依赖低优" --priority 高 --depends-on "$TD1")
+  TD3=$(bash "$SCRIPTS/wf-new.sh" task "高优无依赖" --priority 高)
+  assert_grep "任务 $TD1 带 priority 字段" "priority: 低" docs/tasks/$TD1-*.md
+  assert_grep "任务 $TD2 带 depends_on 字段" "depends_on: $TD1" docs/tasks/$TD2-*.md
+  assert "非任务类型拒绝 --priority" bash -c "! bash '$SCRIPTS/wf-new.sh' issue 'x' --priority 高 2>/dev/null"
+  assert "非法优先级被拒绝" bash -c "! bash '$SCRIPTS/wf-new.sh' task 'x' --priority 最高 2>/dev/null"
+  assert "起草中的任务不被调度" bash -c "WF_DAEMON_DRYRUN=1 bash '$SCRIPTS/wf-daemon.sh' once | grep -q '没有可执行的任务'"
+  bash "$SCRIPTS/wf-status.sh" "$TD1" 待办 >/dev/null
+  bash "$SCRIPTS/wf-status.sh" "$TD2" 待办 >/dev/null
+  bash "$SCRIPTS/wf-status.sh" "$TD3" 待办 >/dev/null
+  assert "调度选中高优无依赖的 ${TD3}（${TD2} 被 ${TD1} 阻塞）" bash -c "WF_DAEMON_DRYRUN=1 bash '$SCRIPTS/wf-daemon.sh' once | grep -q '将派发 $TD3'"
+  bash "$SCRIPTS/wf-status.sh" "$TD3" 进行中 >/dev/null
+  bash "$SCRIPTS/wf-status.sh" "$TD3" 待验收 >/dev/null
+  bash "$SCRIPTS/wf-status.sh" "$TD3" 完成 >/dev/null
+  assert "$TD2 仍被阻塞时选中低优的 $TD1" bash -c "WF_DAEMON_DRYRUN=1 bash '$SCRIPTS/wf-daemon.sh' once | grep -q '将派发 $TD1'"
+  bash "$SCRIPTS/wf-status.sh" "$TD1" 进行中 >/dev/null
+  bash "$SCRIPTS/wf-status.sh" "$TD1" 待验收 >/dev/null
+  bash "$SCRIPTS/wf-status.sh" "$TD1" 完成 >/dev/null
+  assert "前置 $TD1 完成后 $TD2 解除阻塞" bash -c "WF_DAEMON_DRYRUN=1 bash '$SCRIPTS/wf-daemon.sh' once | grep -q '将派发 $TD2'"
+  bash "$SCRIPTS/wf-status.sh" "$TD2" 进行中 >/dev/null
+  bash "$SCRIPTS/wf-status.sh" "$TD2" 待验收 >/dev/null
+  bash "$SCRIPTS/wf-status.sh" "$TD2" 完成 >/dev/null
 
   # 8. 归档：终态文件进 _archive，活跃文件不动，ID 引用不断链
   bash "$SCRIPTS/wf-archive.sh" >/dev/null

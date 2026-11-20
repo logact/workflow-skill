@@ -25,7 +25,7 @@ wf_dir_of() { # $1=type → 打印目录名
 }
 
 wf_valid_status() { # $1=status → 合法返回 0
-  case "$1" in 待办|进行中|待验收|完成|已搁置|已废弃) return 0;; *) return 1;; esac
+  case "$1" in 起草|待办|进行中|待验收|完成|已搁置|已废弃) return 0;; *) return 1;; esac
 }
 
 wf_lock() { # mkdir 自旋锁，退出时自动释放

@@ -49,10 +49,12 @@ run head -8 docs/decisions/D-0001-*.md
 pause
 
 # ── 4 ─────────────────────────────────────────────
-next "创建任务：必须带双层验收标准"
+next "创建任务：必须带双层验收标准，创建即'起草'待审批"
 say "你说：'开始干活吧'。agent 创建任务，创建时就必须写清怎么算做完："
-run bash "$SCRIPTS/wf-new.sh" task "实现记录脚本" --source PRD
+run bash "$SCRIPTS/wf-new.sh" task "实现记录脚本" --source PRD --priority 高
 show docs/tasks/T-0001-*.md
+say "注意：新任务状态是'起草'——这是审批门（D-0006），你点头后才进可执行队列："
+run bash "$SCRIPTS/wf-status.sh" T-0001 待办 "审批通过"
 pause
 
 # ── 5 ─────────────────────────────────────────────
@@ -87,6 +89,7 @@ next "验收不通过：没有死端"
 say "下一个任务'修复输出格式'，你验收时发现还有问题。"
 say "流程不是卡死，而是：打回进行中 + 派生新的问题文件："
 T2=$(bash "$SCRIPTS/wf-new.sh" task "修复输出格式" --source I-0001)
+bash "$SCRIPTS/wf-status.sh" "$T2" 待办 "审批通过" >/dev/null
 bash "$SCRIPTS/wf-status.sh" "$T2" 进行中 >/dev/null
 bash "$SCRIPTS/wf-status.sh" "$T2" 待验收 >/dev/null
 run bash "$SCRIPTS/wf-status.sh" "$T2" 进行中 "验收不通过"
@@ -101,9 +104,18 @@ pause
 next "backlog 回流：搁置条目升级为任务"
 say "之前你说'导出 HTML 先放放'，记进了 backlog。这轮验收后扫一眼，决定现在做："
 run bash "$SCRIPTS/wf-new.sh" backlog "支持导出HTML"
-T3=$(bash "$SCRIPTS/wf-new.sh" task "实现HTML导出" --source B-0001)
+T3=$(bash "$SCRIPTS/wf-new.sh" task "实现HTML导出" --source B-0001 --depends-on T-0001)
 bash "$SCRIPTS/wf-status.sh" B-0001 完成 "回流后已升级为 $T3" >/dev/null
+bash "$SCRIPTS/wf-status.sh" "$T3" 待办 "审批通过" >/dev/null
 say "backlog 条目已标记'完成'（使命达成，升级成了 ${T3}），不会变成坟场。"
+pause
+
+# ── 9.5 ───────────────────────────────────────────
+next "守护调度：自动执行可做的待办任务"
+say "启动 wf-daemon 后，它会自动挑'待办且前置全部完成'的最高优先级任务，"
+say "派发到 Orca worktree 执行；分支合并回主分支后自动转'待验收'等你验收。"
+say "这里用 dryrun 模式展示它的调度决策（不真正派发）："
+WF_DAEMON_DRYRUN=1 run bash "$SCRIPTS/wf-daemon.sh" once
 pause
 
 # ── 10 ────────────────────────────────────────────

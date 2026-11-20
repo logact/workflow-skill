@@ -25,6 +25,10 @@ while IFS= read -r f; do
   [ -n "$id" ] || err "$f 缺少 id"
   [ -n "$ty" ] || err "$f 缺少 type"
   wf_valid_status "$st" || err "$f status 非法: '$st'"
+  if [ "$ty" = task ]; then
+    pr=$(wf_get_field "$f" priority)
+    case "$pr" in 高|中|低) ;; *) err "$f priority 非法: '$pr'（合法：高/中/低）";; esac
+  fi
   [ -n "$id" ] && echo "$id" >> "$all_ids"
 done < "$all_files"
 
