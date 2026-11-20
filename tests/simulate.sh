@@ -130,6 +130,59 @@ run_domain() { # $1=域名 $2=flavor(script|docs)
   bash "$SCRIPTS/wf-status.sh" "$TD2" 待验收 >/dev/null
   bash "$SCRIPTS/wf-status.sh" "$TD2" 完成 >/dev/null
 
+  # 7.9 暂停检测（D-0007）：mock orca，验证活动检测与恢复路径
+  mkdir -p mockbin
+  cat > mockbin/orca << 'MOCK'
+#!/usr/bin/env bash
+now_ms=$(( $(date +%s) * 1000 ))
+case "$1 $2" in
+  "worktree show")
+    case "$4" in
+      id:repo::/gone) echo '{"ok":false,"error":"worktree not found"}' >&2; exit 1;;
+      *) echo '{"ok":true,"result":{}}'; exit 0;;
+    esac;;
+  "terminal list")
+    case "$4" in
+      id:repo::/disconnected) echo '{"result":{"terminals":[{"connected": false, "lastOutputAt": null}]}}';;
+      id:repo::/stale) echo "{\"result\":{\"terminals\":[{\"connected\": true, \"lastOutputAt\": $(( now_ms - 7200000 ))}]}}";;
+      *) echo "{\"result\":{\"terminals\":[{\"connected\": true, \"lastOutputAt\": $now_ms}]}}";;
+    esac
+    exit 0;;
+esac
+exit 0
+MOCK
+  chmod +x mockbin/orca
+
+  TP1=$(bash "$SCRIPTS/wf-new.sh" task "worktree被删")
+  TP2=$(bash "$SCRIPTS/wf-new.sh" task "终端全断开")
+  TP3=$(bash "$SCRIPTS/wf-new.sh" task "输出停滞")
+  TP4=$(bash "$SCRIPTS/wf-new.sh" task "正常工作")
+  for tp in $TP1 $TP2 $TP3 $TP4; do
+    bash "$SCRIPTS/wf-status.sh" "$tp" 待办 >/dev/null
+    bash "$SCRIPTS/wf-status.sh" "$tp" 进行中 >/dev/null
+  done
+  sed -i '' 's/^worktree:.*/worktree: repo::\/gone/' docs/tasks/$TP1-*.md
+  sed -i '' 's/^worktree:.*/worktree: repo::\/disconnected/' docs/tasks/$TP2-*.md
+  sed -i '' 's/^worktree:.*/worktree: repo::\/stale/' docs/tasks/$TP3-*.md
+  sed -i '' 's/^worktree:.*/worktree: repo::\/active/' docs/tasks/$TP4-*.md
+  PATH="$dir/mockbin:$PATH" bash "$SCRIPTS/wf-daemon.sh" once >/dev/null
+  assert_grep "$TP1 worktree 消失 → 暂停" "status: 暂停" docs/tasks/$TP1-*.md
+  assert_grep "$TP2 终端全断开 → 暂停" "status: 暂停" docs/tasks/$TP2-*.md
+  assert_grep "$TP3 无输出超时 → 暂停" "status: 暂停" docs/tasks/$TP3-*.md
+  assert_grep "$TP4 正常输出 → 保持进行中" "status: 进行中" docs/tasks/$TP4-*.md
+  assert_grep "$TP1 暂停记录含 worktree 消失原因" "worktree 不存在" docs/tasks/$TP1-*.md
+  assert_grep "$TP3 暂停记录含停滞原因" "无输出" docs/tasks/$TP3-*.md
+  assert "INDEX 有 ${TP1} 暂停事件" bash -c "grep '$TP1' docs/INDEX.md | grep -q '暂停'"
+  bash "$SCRIPTS/wf-status.sh" "$TP1" 进行中 "恢复执行" >/dev/null
+  assert_grep "$TP1 暂停→进行中（恢复）" "status: 进行中" docs/tasks/$TP1-*.md
+  bash "$SCRIPTS/wf-status.sh" "$TP2" 待办 "重新排队" >/dev/null
+  assert "重新排队的 $TP2 会被调度器选中" bash -c "PATH='$dir/mockbin:'\"$PATH\" WF_DAEMON_DRYRUN=1 bash '$SCRIPTS/wf-daemon.sh' once | grep -q '将派发 $TP2'"
+  if bash "$SCRIPTS/wf-status.sh" "$TP2" 暂停 >/dev/null 2>&1; then bad "待办→暂停被拒绝"; else ok "待办→暂停被拒绝"; fi
+  bash "$SCRIPTS/wf-status.sh" "$TP1" 已废弃 >/dev/null
+  bash "$SCRIPTS/wf-status.sh" "$TP2" 已废弃 >/dev/null
+  bash "$SCRIPTS/wf-status.sh" "$TP3" 已废弃 >/dev/null
+  bash "$SCRIPTS/wf-status.sh" "$TP4" 已废弃 >/dev/null
+
   # 8. 归档：终态文件进 _archive，活跃文件不动，ID 引用不断链
   bash "$SCRIPTS/wf-archive.sh" >/dev/null
   assert "终态任务已归档" bash -c "ls docs/tasks/_archive/$MONTH/T-*.md >/dev/null 2>&1"

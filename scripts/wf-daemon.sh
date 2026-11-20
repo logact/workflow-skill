@@ -6,8 +6,9 @@
 #   wf-daemon.sh stop                  停止后台循环
 #   wf-daemon.sh status                查看是否在跑
 # 环境变量:
-#   WF_DAEMON_AGENT   派发用的 agent id（默认 claude）
-#   WF_DAEMON_DRYRUN  =1 时只打印调度决策，不改状态、不调 orca（测试用）
+#   WF_DAEMON_AGENT          派发用的 agent id（默认 claude）
+#   WF_DAEMON_STALL_MINUTES  终端无输出多少分钟判定为停滞（默认 30）
+#   WF_DAEMON_DRYRUN         =1 时只打印调度决策，不改状态、不调 orca（测试用）
 set -euo pipefail
 source "$(dirname "$0")/wf-common.sh"
 
@@ -64,7 +65,7 @@ wf_dispatch() { # $1=id $2=任务文件
     return 0
   fi
   bash "$(dirname "$0")/wf-status.sh" "$id" 进行中 "守护调度器派发" >/dev/null
-  prompt="你正在 Orca worktree 中执行任务 ${id}。先阅读本 checkout 里的 ${f#./} 以及 $WF_DOCS/PRD.md、$WF_DOCS/README.md 了解任务目标与项目规则。要求：1) 在本 worktree 当前分支上实现任务目标并自测；2) 自测通过后把本分支合并回主分支（main）并解决冲突，合并成功即结果层面验收通过；3) 合并成功后运行：WF_DOCS='$root/$WF_DOCS' bash '$root/scripts/wf-status.sh' $id 待验收 '分支已合并主分支'；4) 过程记录追加到 $root/$WF_DOCS/logs/。注意：所有记录操作只对主 checkout（${root}）执行，不要改本 worktree 里的 docs/。"
+  prompt="你正在 Orca worktree 中执行任务 ${id}。先阅读本 checkout 里的 ${f#./} 以及 $WF_DOCS/PRD.md、$WF_DOCS/README.md 了解任务目标与项目规则。要求：1) 在本 worktree 当前分支上实现任务目标并自测；2) 自测通过后把本分支合并回主分支（main）并解决冲突，合并成功即结果层面验收通过；3) 合并成功后运行：WF_DOCS='$root/$WF_DOCS' bash '$root/scripts/wf-status.sh' $id 待验收 '分支已合并主分支'；4) 遇到无法继续的阻塞或需要暂停时，先运行：WF_DOCS='$root/$WF_DOCS' bash '$root/scripts/wf-status.sh' $id 暂停 '<原因>'，写清原因再停下——不要不告而停；5) 工作期间在每个关键节点运行：orca worktree set --worktree active --comment '<一句话进展>'，作为心跳；6) 过程记录追加到 $root/$WF_DOCS/logs/。注意：所有记录操作只对主 checkout（${root}）执行，不要改本 worktree 里的 docs/。"
   if ! json=$(orca worktree create --name "$id" --agent "$AGENT" --prompt "$prompt" --json 2>&1); then
     echo "wf-daemon: orca worktree create 失败：$json" >&2
     echo "wf-daemon: $id 保持进行中，请人工处理" >&2
@@ -78,6 +79,50 @@ wf_dispatch() { # $1=id $2=任务文件
   wf_index "$id" "派发至 worktree（分支 ${branch}）"
   wf_git_commit "wf: ${id} 派发至 worktree（分支 ${branch}）" "$f" "$WF_DOCS/INDEX.md"
   echo "wf-daemon: 已派发 $id → worktree（分支 $branch）"
+}
+
+wf_pause_task() { # $1=id $2=任务文件 $3=原因：先写暂停记录，再流转（wf-status 的提交会带上正文变更）
+  grep -q '^## 暂停记录' "$2" || printf '\n## 暂停记录\n' >> "$2"
+  printf '%s\n' "- $(wf_now) $3" >> "$2"
+  bash "$(dirname "$0")/wf-status.sh" "$1" 暂停 "$3" >/dev/null
+  echo "wf-daemon: $1 已转暂停（$3）"
+}
+
+wf_check_paused() { # 进行中任务：worktree 消失 / 终端全断开 / 长时间无输出 → 转暂停并记录原因（D-0007）
+  command -v orca >/dev/null 2>&1 || return 0
+  local stall_min="${WF_DAEMON_STALL_MINUTES:-30}"
+  local stall_ms=$(( stall_min * 60000 ))
+  local now_ms=$(( $(date +%s) * 1000 ))
+  local f st wt id reason terms latest age_min
+  for f in "$WF_DOCS"/tasks/T-*.md; do
+    [ -e "$f" ] || continue
+    st=$(wf_get_status "$f")
+    [ "$st" = "进行中" ] || continue
+    wt=$(wf_get_field "$f" worktree | sed 's/#.*//')
+    [ -n "$wt" ] || continue   # 手工执行的任务没有 worktree，不检测
+    id=$(wf_get_field "$f" id)
+    reason=""
+    if ! orca worktree show --worktree "id:$wt" --json >/dev/null 2>&1; then
+      reason="Orca worktree 不存在（可能已被删除）"
+    else
+      terms=$(orca terminal list --worktree "id:$wt" --json 2>/dev/null) || terms=""
+      if ! printf '%s' "$terms" | grep -q '"connected": *true'; then
+        reason="执行终端已全部断开，分支未合并回主分支"
+      else
+        latest=$(printf '%s' "$terms" | grep -o '"lastOutputAt": [0-9]*' | sed 's/[^0-9]//g' | sort -n | tail -1)
+        if [ -n "$latest" ] && [ $(( now_ms - latest )) -gt "$stall_ms" ]; then
+          age_min=$(( (now_ms - latest) / 60000 ))
+          reason="执行终端 ${age_min} 分钟无输出，疑似停滞（阈值 ${stall_min} 分钟）"
+        fi
+      fi
+    fi
+    [ -n "$reason" ] || continue
+    if [ "$DRYRUN" = "1" ]; then
+      echo "wf-daemon: [dryrun] $id 检测到暂停（${reason}），将转暂停"
+    else
+      wf_pause_task "$id" "$f" "$reason"
+    fi
+  done
 }
 
 wf_collect_merged() { # 收口：进行中任务的分支已合并回主分支 → 转待验收
@@ -114,6 +159,7 @@ done
 case "$cmd" in
   once)
     wf_collect_merged
+    wf_check_paused
     t=$(wf_pick_task)
     if [ -n "$t" ]; then
       wf_dispatch "${t%%|*}" "${t##*|}"
