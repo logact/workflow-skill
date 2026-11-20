@@ -81,4 +81,6 @@ if [ -n "$supersedes" ]; then
 fi
 
 wf_index "$id" "创建（${title}）"
+
+wf_git_commit "wf: 创建 ${id}（${title}）" "$WF_DOCS/$dir/$id-$title.md" "$WF_DOCS/INDEX.md" ${supersedes:+"$old"}
 echo "$id"

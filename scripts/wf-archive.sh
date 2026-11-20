@@ -6,6 +6,7 @@ source "$(dirname "$0")/wf-common.sh"
 
 month=$(wf_month)
 count=0
+changed=()
 
 for d in decisions tasks issues backlog; do
   [ -d "$WF_DOCS/$d" ] || continue
@@ -24,8 +25,13 @@ for d in decisions tasks issues backlog; do
     mv "$f" "$dest/$base"
     wf_index "$id" "归档 → $d/_archive/$month"
     echo "归档: $id → $d/_archive/$month/$base"
+    changed+=("$f" "$dest/$base")
     count=$((count+1))
   done < <(find "$WF_DOCS/$d" -maxdepth 1 -type f -name '*.md')
 done
+
+if [ "$count" -gt 0 ]; then
+  wf_git_commit "wf: 归档 ${count} 个终态文件（${month}）" "$WF_DOCS/INDEX.md" "${changed[@]}"
+fi
 
 echo "wf-archive: 共归档 $count 个文件"

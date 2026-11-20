@@ -82,3 +82,13 @@ wf_set_status() { # $1=文件 $2=新状态
 wf_set_field() { # $1=文件 $2=字段名 $3=新值
   sed -i '' "/^---$/,/^---$/ s/^$2:.*/$2: $3/" "$1"
 }
+
+wf_git_commit() { # $1=提交信息，其余=变更的文件路径；不在 git 仓库或路径被 ignore 时静默跳过，提交失败仅告警
+  local msg="$1"; shift
+  command -v git >/dev/null 2>&1 || return 0
+  git rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+  git check-ignore -q "$1" 2>/dev/null && return 0
+  git add -- "$@" || { echo "wf: git add 失败，记录已写入但未提交，请手工提交" >&2; return 0; }
+  git diff --cached --quiet && return 0
+  git commit -q -m "$msg" || echo "wf: git commit 失败，改动已暂存，请手工提交" >&2
+}
