@@ -45,7 +45,7 @@ description: PRD 驱动的项目记录工作流。在对话中识别并记录决
 3. **建任务**：`wf-new.sh task`，创建时必须在文件里补全双层验收标准；进入执行时用 `orca worktree create --name T-xxxx-简短描述 --json` 建独立 worktree，把 worktree id 和分支名写进任务文件 frontmatter，执行 agent 在该 worktree 内工作
 4. **记问题**：`wf-new.sh issue`，一个问题一个文件；多个问题可并行交给多个 agent，各写各的
 5. **验收**：结果层面看 worktree 分支是否合并回主分支（合并成功即通过）+ 日志层面查记录，通过 → `wf-status.sh T-xxxx 完成`；不通过 → `wf-new.sh issue` + `wf-status.sh T-xxxx 进行中`
-6. **每轮验收后**：扫 backlog/ 决定回流；跑 `wf-archive.sh` 归档终态文件；跑 `wf-check.sh` 确认一致性
+6. **每轮验收后**：扫 backlog/ 决定回流；跑 `wf-check.sh` 确认一致性。**不归档**——`wf-archive.sh` 只在用户明确要求时执行（D-0004）
 7. **修改规则**：结构或流程的改动必须改 assets/README.md 并记录决策文件
 
 详细规则见 assets/README.md（初始化后即在项目 docs/README.md）。

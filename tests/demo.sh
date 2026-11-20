@@ -107,8 +107,8 @@ say "backlog 条目已标记'完成'（使命达成，升级成了 ${T3}），�
 pause
 
 # ── 10 ────────────────────────────────────────────
-next "归档：一轮结束，终态文件沉底"
-say "一轮工作结束，agent 归档终态文件，活跃目录保持清爽："
+next "归档：用户明确要求时，终态文件沉底"
+say "文件积多了，你明确说'归档吧'，agent 才会跑 wf-archive（不会自动归档）："
 run bash "$SCRIPTS/wf-archive.sh"
 say "归档后的目录（注意 _archive/ 出现在各类型目录内）："
 run find docs -type f -name '*.md' | sort
