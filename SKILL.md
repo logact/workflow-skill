@@ -12,8 +12,9 @@ description: PRD 驱动的项目记录工作流。在对话中识别并记录决
 1. 每个决策都要有记录：对话中识别到决策点，**主动提议一句话记录**，用户确认后执行 `wf-new.sh decision`
 2. 一个文件一个归属：一个问题/任务/决策一个文件；多 agent 并行时只写自己的文件，INDEX 只追加
 3. 状态唯一事实源是文件 frontmatter 的 `status` 字段；文件间引用一律用 ID（如 `I-0003`），不写相对路径
-4. 每个任务必须带双层验收标准：结果层面（能跑、能看产出）+ 日志层面（docs/logs/ 有记录）
+4. 每个任务必须带双层验收标准：结果层面（worktree 分支合并回主分支）+ 日志层面（docs/logs/ 有记录）
 5. 验收不通过没有死端：新建问题文件，任务回到"进行中"，循环继续
+6. 记录即提交：记录的每次创建/修改必须进 git。`wf-new.sh`/`wf-status.sh`/`wf-archive.sh` 会自动提交本次涉及的文件；脚本之外的手工修改由 agent 改完立即自行提交
 
 ## 脚本（scripts/，bash，无依赖）
 
@@ -41,9 +42,9 @@ description: PRD 驱动的项目记录工作流。在对话中识别并记录决
 
 1. **初始化**：项目首次使用，先跑 `wf-init.sh`
 2. **记录决策**：识别到"选了 A 放弃 B"的时刻 → 提议一句话 → 确认后 `wf-new.sh decision`；决策变更用 `--supersedes` 取代旧决策，不改写旧文件
-3. **建任务**：`wf-new.sh task`，创建时必须在文件里补全双层验收标准
+3. **建任务**：`wf-new.sh task`，创建时必须在文件里补全双层验收标准；进入执行时用 `orca worktree create --name T-xxxx-简短描述 --json` 建独立 worktree，把 worktree id 和分支名写进任务文件 frontmatter，执行 agent 在该 worktree 内工作
 4. **记问题**：`wf-new.sh issue`，一个问题一个文件；多个问题可并行交给多个 agent，各写各的
-5. **验收**：结果层面跑一遍 + 日志层面查记录，通过 → `wf-status.sh T-xxxx 完成`；不通过 → `wf-new.sh issue` + `wf-status.sh T-xxxx 进行中`
+5. **验收**：结果层面看 worktree 分支是否合并回主分支（合并成功即通过）+ 日志层面查记录，通过 → `wf-status.sh T-xxxx 完成`；不通过 → `wf-new.sh issue` + `wf-status.sh T-xxxx 进行中`
 6. **每轮验收后**：扫 backlog/ 决定回流；跑 `wf-archive.sh` 归档终态文件；跑 `wf-check.sh` 确认一致性
 7. **修改规则**：结构或流程的改动必须改 assets/README.md 并记录决策文件
 

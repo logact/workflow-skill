@@ -37,8 +37,10 @@ docs/
 2. **并行约束**：多个 agent 同时工作时只写自己的问题/任务文件；`INDEX.md` 只追加，格式：
    `YYYY-MM-DD HH:MM | 文件ID | 事件 | 操作者`
 3. **追溯链**：文件间引用一律用全局唯一 ID（如 `I-0003`），不写相对路径——这样归档移动文件也不会断链；定位文件用 grep ID
-4. **验收**：每个任务必须同时有结果层面标准（能跑、能看产出）和日志层面标准（docs/logs/ 有记录）
-5. **backlog 回流**：每轮验收后扫一遍 backlog/，决定哪些升级为任务
+4. **任务执行环境（Orca worktree，见 decisions/D-0002）**：任务进入执行时，用 `orca worktree create --name T-xxxx-简短描述 --json` 创建独立 worktree，把返回的 worktree id（`<repoId>::<path>`）和分支名写进任务文件 frontmatter 的 `worktree`/`branch` 字段；执行 agent 在该 worktree 内工作，互不污染
+5. **验收**：每个任务的结果层面标准是"worktree 分支合并回主分支"——合并提交存在即通过；日志层面标准是 docs/logs/ 有记录。两层都过才算验收通过
+6. **backlog 回流**：每轮验收后扫一遍 backlog/，决定哪些升级为任务
+7. **记录即提交（见 decisions/D-0003）**：记录的每次创建/修改必须进 git。`wf-new.sh`/`wf-status.sh`/`wf-archive.sh` 会自动 `git add` 本次涉及的文件（记录文件 + INDEX.md）并提交，提交信息格式 `wf: <动作> <ID>`；脚本之外的手工修改（如补全验收标准、填写决策正文）由 agent 改完立即自行提交。非 git 仓库或被 gitignore 的路径（如 tests/ 演示工作区）自动跳过
 
 ## 归档机制（见 decisions/D-0001）
 
